@@ -2,12 +2,16 @@
 Client Site Monitor
 --------------------
 Checks uptime (every run) and, in "full" mode, SSL certificate expiry and
-domain (WHOIS) expiry for every enabled site in monitors.json.
+domain (WHOIS) expiry for every enabled site listed in the "Monitors" tab of
+the Google Sheet.
 
-State (previous status, previous SSL/domain days left, which expiry
-thresholds have already been alerted on) is stored in a Google Sheet so it
-survives between GitHub Actions runs, which each start on a fresh machine
-with nothing saved locally.
+The Sheet is the single source of truth for:
+  - Which sites are monitored (the "Monitors" tab -- add/remove/pause rows
+    there, no code or GitHub changes needed)
+  - Who gets alerted (the "Settings" tab)
+  - Current + historical state (the "Status" tab), which is what lets alerts
+    persist across GitHub Actions runs, since each run starts on a fresh
+    machine with nothing saved locally.
 
 Alerts go to:
   - Email (Gmail/Workspace SMTP), to every address listed in the Sheet's
@@ -16,8 +20,7 @@ Alerts go to:
 
 On the very first run for a given site, we just record its current state as
 the baseline -- we don't fire an alert, since we have nothing to compare
-against yet (this matters because jacksonelectrical.co.uk is already down
-when this is first switched on).
+against yet.
 """
 
 import os
@@ -43,6 +46,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 SPREADSHEET_ID = "1kGXRxCouDyVG_I_FNn0ERpTnsoxgKSjKfdUoDQ6i_ns"
+MONITORS_SHEET_NAME = "Monitors"
 STATUS_SHEET_NAME = "Status"
 SETTINGS_SHEET_NAME = "Settings"
 
@@ -52,7 +56,11 @@ STATUS_HEADERS = [
     "Alerted Thresholds",
 ]
 
-EXPIRY_THRESHOLDS = [30, 14, 7]  # days -- alert once when crossing each of these
+EXPIRY_THRESHOLDS = [30, 14, 7, 1]  # days -- alert once when crossing each of these
+
+# How many consecutive failed checks before we send a repeat "still down"
+# reminder. Uptime checks run every 30 min, so 8 checks == ~4 hours.
+STILL_DOWN_REPEAT_EVERY = 8
 
 CHECK_MODE = os.environ.get("CHECK_MODE", "full")  # "uptime" or "full"
 
@@ -75,6 +83,18 @@ def get_sheets_client():
 def ensure_worksheets(spreadsheet):
     titles = [ws.title for ws in spreadsheet.worksheets()]
 
+    if MONITORS_SHEET_NAME not in titles:
+        ws = spreadsheet.add_worksheet(title=MONITORS_SHEET_NAME, rows=200, cols=3)
+        ws.append_row(["Name", "URL", "Enabled"])
+        # One-time migration: seed from monitors.json if it exists, so the
+        # existing site list doesn't need retyping into the Sheet.
+        if os.path.exists("monitors.json"):
+            with open("monitors.json") as f:
+                seed = json.load(f)
+            rows = [[m["name"], m["url"], "TRUE" if m.get("enabled", True) else "FALSE"] for m in seed]
+            if rows:
+                ws.append_rows(rows)
+
     if STATUS_SHEET_NAME not in titles:
         ws = spreadsheet.add_worksheet(title=STATUS_SHEET_NAME, rows=200, cols=len(STATUS_HEADERS))
         ws.append_row(STATUS_HEADERS)
@@ -85,6 +105,20 @@ def ensure_worksheets(spreadsheet):
         default_email = os.environ.get("ALERT_EMAIL", "")
         if default_email:
             ws.append_row([default_email])
+
+
+def load_monitors(spreadsheet):
+    ws = spreadsheet.worksheet(MONITORS_SHEET_NAME)
+    records = ws.get_all_records()
+    monitors = []
+    for row in records:
+        name = str(row.get("Name", "")).strip()
+        url = str(row.get("URL", "")).strip()
+        if not name or not url:
+            continue
+        enabled = str(row.get("Enabled", "TRUE")).strip().upper() != "FALSE"
+        monitors.append({"name": name, "url": url, "enabled": enabled})
+    return [m for m in monitors if m["enabled"]]
 
 
 def load_alert_emails(spreadsheet):
@@ -103,16 +137,6 @@ def load_previous_status(spreadsheet):
     # Map monitor name -> (row number in sheet, record dict)
     # Row 1 is the header, so first data row is row 2.
     return ws, {row["Name"]: (i + 2, row) for i, row in enumerate(records)}
-
-
-# ---------------------------------------------------------------------------
-# Monitor list
-# ---------------------------------------------------------------------------
-
-def load_monitors():
-    with open("monitors.json") as f:
-        monitors = json.load(f)
-    return [m for m in monitors if m.get("enabled", True)]
 
 
 def get_hostname(url):
@@ -221,7 +245,7 @@ def main():
 
     recipients = load_alert_emails(spreadsheet)
     status_ws, previous = load_previous_status(spreadsheet)
-    monitors = load_monitors()
+    monitors = load_monitors(spreadsheet)
 
     down_webhook = os.environ.get("ZAPIER_WEBHOOK_DOWNTIME")
     expiry_webhook = os.environ.get("ZAPIER_WEBHOOK_EXPIRY")
@@ -251,13 +275,23 @@ def main():
 
         if not is_first_run:
             if prev_status != "DOWN" and new_status == "DOWN":
-                msg = f"\U0001F534 DOWN: {name} ({url}) is unreachable -- {detail}. Detected: {now_str}"
+                msg = (f"<!here> \U0001F534 DOWN: {name} ({url}) is unreachable -- {detail}. "
+                       f"Detected: {now_str}")
                 send_zapier(down_webhook, msg)
                 send_email(f"[Site Monitor] DOWN: {name}", msg, recipients)
             elif prev_status == "DOWN" and new_status == "UP":
                 msg = f"✅ RECOVERED: {name} ({url}) is back up as of {now_str}"
                 send_zapier(down_webhook, msg)
                 send_email(f"[Site Monitor] Recovered: {name}", msg, recipients)
+            elif prev_status == "DOWN" and new_status == "DOWN":
+                # Still down from a previous run -- send a periodic reminder
+                # rather than staying silent for the whole outage.
+                if fails >= 2 and (fails - 2) % STILL_DOWN_REPEAT_EVERY == 0:
+                    approx_minutes = fails * 30
+                    msg = (f"<!here> \U0001F534 STILL DOWN: {name} ({url}) has been unreachable "
+                           f"for approximately {approx_minutes} minutes -- {detail}")
+                    send_zapier(down_webhook, msg)
+                    send_email(f"[Site Monitor] Still down: {name}", msg, recipients)
 
         # --- SSL / domain expiry checks (only in "full" mode, once a day) ---
         if CHECK_MODE == "full":

@@ -1,0 +1,50 @@
+name: Site Monitor
+
+on:
+  schedule:
+    # Uptime-only check, every 30 minutes
+    - cron: '*/30 * * * *'
+    # Full check (uptime + SSL + domain expiry), once a day at 06:00 UTC
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Check mode: uptime or full'
+        required: false
+        default: 'full'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Work out which mode to run in
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "mode=${{ github.event.inputs.mode }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "0 6 * * *" ]; then
+            echo "mode=full" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=uptime" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run monitor
+        env:
+          CHECK_MODE: ${{ steps.mode.outputs.mode }}
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
+          ZAPIER_WEBHOOK_DOWNTIME: ${{ secrets.ZAPIER_WEBHOOK_DOWNTIME }}
+          ZAPIER_WEBHOOK_EXPIRY: ${{ secrets.ZAPIER_WEBHOOK_EXPIRY }}
+        run: python monitor.py

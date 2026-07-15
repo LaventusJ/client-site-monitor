@@ -29,7 +29,7 @@ import json
 import socket
 import ssl
 import smtplib
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from email.mime.text import MIMEText
 
 import requests
@@ -49,12 +49,19 @@ SPREADSHEET_ID = "1kGXRxCouDyVG_I_FNn0ERpTnsoxgKSjKfdUoDQ6i_ns"
 MONITORS_SHEET_NAME = "Monitors"
 STATUS_SHEET_NAME = "Status"
 SETTINGS_SHEET_NAME = "Settings"
+HISTORY_SHEET_NAME = "History"
 
 STATUS_HEADERS = [
     "Name", "URL", "Status", "Last Checked (UTC)", "Consecutive Fails",
     "SSL Expiry Date", "SSL Days Left", "Domain Expiry Date", "Domain Days Left",
     "Alerted Thresholds",
 ]
+
+# One row per site per check, used to power the Incidents page and per-site
+# uptime %/history bar on the dashboard. Pruned back to HISTORY_RETENTION_DAYS
+# once a day (during "full" mode runs) so the sheet doesn't grow forever.
+HISTORY_HEADERS = ["Name", "Timestamp (UTC)", "Status", "Detail"]
+HISTORY_RETENTION_DAYS = 35
 
 EXPIRY_THRESHOLDS = [30, 14, 7, 1]  # days -- alert once when crossing each of these
 
@@ -106,6 +113,10 @@ def ensure_worksheets(spreadsheet):
         if default_email:
             ws.append_row([default_email])
 
+    if HISTORY_SHEET_NAME not in titles:
+        ws = spreadsheet.add_worksheet(title=HISTORY_SHEET_NAME, rows=1000, cols=len(HISTORY_HEADERS))
+        ws.append_row(HISTORY_HEADERS)
+
 
 def load_monitors(spreadsheet):
     ws = spreadsheet.worksheet(MONITORS_SHEET_NAME)
@@ -137,6 +148,37 @@ def load_previous_status(spreadsheet):
     # Map monitor name -> (row number in sheet, record dict)
     # Row 1 is the header, so first data row is row 2.
     return ws, {row["Name"]: (i + 2, row) for i, row in enumerate(records)}
+
+
+def prune_history(spreadsheet, retention_days=HISTORY_RETENTION_DAYS):
+    """Deletes History rows older than retention_days. Runs once a day (full
+    mode only) since it re-reads and rewrites the whole tab -- no need to pay
+    that cost on every 30-min uptime check."""
+    ws = spreadsheet.worksheet(HISTORY_SHEET_NAME)
+    all_values = ws.get_all_values()
+    if len(all_values) <= 1:
+        return  # just the header, nothing to prune
+
+    header, rows = all_values[0], all_values[1:]
+    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+
+    kept = []
+    for row in rows:
+        timestamp = row[1] if len(row) > 1 else ""
+        try:
+            row_time = datetime.strptime(timestamp, "%Y-%m-%d %H:%M UTC").replace(tzinfo=timezone.utc)
+        except ValueError:
+            kept.append(row)  # can't parse it -- keep it rather than risk losing data
+            continue
+        if row_time >= cutoff:
+            kept.append(row)
+
+    if len(kept) != len(rows):
+        ws.clear()
+        ws.append_row(header)
+        if kept:
+            ws.append_rows(kept)
+        print(f"History pruned: {len(rows) - len(kept)} rows older than {retention_days} days removed")
 
 
 def get_hostname(url):
@@ -245,11 +287,13 @@ def main():
 
     recipients = load_alert_emails(spreadsheet)
     status_ws, previous = load_previous_status(spreadsheet)
+    history_ws = spreadsheet.worksheet(HISTORY_SHEET_NAME)
     monitors = load_monitors(spreadsheet)
 
     down_webhook = os.environ.get("ZAPIER_WEBHOOK_DOWNTIME")
     expiry_webhook = os.environ.get("ZAPIER_WEBHOOK_EXPIRY")
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    history_rows = []
 
     for m in monitors:
         name, url = m["name"], m["url"]
@@ -272,6 +316,8 @@ def main():
             # Require 2 consecutive failures before calling it DOWN, so a
             # single network blip doesn't trigger a false alarm.
             new_status = "DOWN" if fails >= 2 else (prev_status or "UP")
+
+        history_rows.append([name, now_str, new_status, detail])
 
         if not is_first_run:
             if prev_status != "DOWN" and new_status == "DOWN":
@@ -342,6 +388,12 @@ def main():
             status_ws.append_row(row_data)
 
         print(f"{name}: {new_status} (SSL {ssl_days}d, Domain {domain_days}d)")
+
+    if history_rows:
+        history_ws.append_rows(history_rows)
+
+    if CHECK_MODE == "full":
+        prune_history(spreadsheet)
 
 
 if __name__ == "__main__":

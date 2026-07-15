@@ -115,6 +115,35 @@
   .summary-card.good .num { color: var(--up-text); }
   .summary-card.bad .num { color: var(--down-text); }
 
+  .expiring-panel {
+    background: var(--card-bg);
+    border: 1px solid var(--critical-text);
+    border-radius: 10px;
+    padding: 10px 16px;
+    margin-bottom: 12px;
+  }
+  .expiring-panel .panel-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--critical-text);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-bottom: 6px;
+  }
+  .expiring-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    padding: 4px 0;
+  }
+  .expiring-item + .expiring-item { border-top: 1px solid var(--border); }
+  .expiring-item .name { font-weight: 600; }
+  .expiring-item .detail { color: var(--text-muted); font-size: 12px; }
+  .expiring-item .days { font-weight: 700; padding: 2px 8px; border-radius: 6px; font-size: 12px; }
+  .expiring-item .days.expiry-warn { background: var(--warn-bg); color: var(--warn-text); }
+  .expiring-item .days.expiry-critical { background: var(--critical-bg); color: var(--critical-text); }
+
   .count-bar {
     display: flex;
     align-items: center;
@@ -259,6 +288,7 @@
 
   <div id="view-monitors">
     <div id="summary24h" class="summary-row"></div>
+    <div id="expiring-panel"></div>
     <div id="countbar" class="count-bar"></div>
     <div id="content"><div class="state" id="loading">Loading status data&hellip;</div></div>
   </div>
@@ -433,6 +463,7 @@ function render(rows, bySite) {
   `;
 
   renderSummary24h(bySite, downCount > 0);
+  renderExpiringPanel(rows);
 
   const sorted = [...rows].sort((a, b) => {
     if (a["Status"] !== b["Status"]) return a["Status"] === "DOWN" ? -1 : 1;
@@ -478,6 +509,42 @@ function render(rows, bySite) {
 
   document.getElementById("footer").textContent =
     "Auto-refreshes every " + (REFRESH_INTERVAL_MS / 1000) + "s. Underlying checks run every 30 minutes.";
+}
+
+function renderExpiringPanel(rows) {
+  const items = [];
+  rows.forEach(r => {
+    const sslDays = parseInt(r["SSL Days Left"]);
+    const domDays = parseInt(r["Domain Days Left"]);
+    if (!isNaN(sslDays) && sslDays <= 30) {
+      items.push({ name: r["Name"], label: "SSL", days: sslDays, date: r["SSL Expiry Date"] });
+    }
+    if (!isNaN(domDays) && domDays <= 30) {
+      items.push({ name: r["Name"], label: "Domain", days: domDays, date: r["Domain Expiry Date"] });
+    }
+  });
+
+  const panel = document.getElementById("expiring-panel");
+  if (!items.length) {
+    panel.innerHTML = "";
+    panel.className = "";
+    return;
+  }
+
+  items.sort((a, b) => a.days - b.days);
+
+  const rowsHtml = items.map(i => {
+    const cls = i.days <= 7 ? "expiry-critical" : "expiry-warn";
+    return `
+      <div class="expiring-item">
+        <div><span class="name">${i.name}</span> <span class="detail">${i.label} &middot; ${i.date || ''}</span></div>
+        <div class="days ${cls}">${i.days}d</div>
+      </div>
+    `;
+  }).join("");
+
+  panel.className = "expiring-panel";
+  panel.innerHTML = `<div class="panel-title">Expiring soon</div>${rowsHtml}`;
 }
 
 function renderSummary24h(bySite, anyDownNow) {

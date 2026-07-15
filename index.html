@@ -4,15 +4,58 @@
 <meta charset="UTF-8">
 <title>Client Site Monitor</title>
 <style>
+  :root {
+    --bg: #f4f5f7;
+    --card-bg: #ffffff;
+    --border: #e5e7eb;
+    --text: #1a1a1a;
+    --text-muted: #6b7280;
+    --text-faint: #9ca3af;
+    --up: #22c55e;
+    --up-text: #16a34a;
+    --down: #ef4444;
+    --down-text: #dc2626;
+    --warn-bg: #fef3c7;
+    --warn-text: #b45309;
+    --critical-bg: #fee2e2;
+    --critical-text: #b91c1c;
+    --row-hover: #fafafa;
+    --tab-active-bg: #1a1a1a;
+    --tab-active-text: #ffffff;
+    --tick-empty: #e5e7eb;
+  }
+  [data-theme="dark"] {
+    --bg: #0f1115;
+    --card-bg: #191b20;
+    --border: #2a2d34;
+    --text: #e6e7eb;
+    --text-muted: #9ca3af;
+    --text-faint: #6b7280;
+    --up: #22c55e;
+    --up-text: #4ade80;
+    --down: #ef4444;
+    --down-text: #f87171;
+    --warn-bg: #3f2d0a;
+    --warn-text: #fbbf24;
+    --critical-bg: #3f1414;
+    --critical-text: #fca5a5;
+    --row-hover: #20232a;
+    --tab-active-bg: #e6e7eb;
+    --tab-active-text: #0f1115;
+    --tick-empty: #2a2d34;
+  }
+
   * { box-sizing: border-box; }
   body {
     margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    background: #f9fafb;
-    color: #1a1a1a;
+    background: var(--bg);
+    color: var(--text);
     padding: 30px 20px;
+    transition: background 0.15s ease, color 0.15s ease;
   }
-  .wrap { max-width: 1000px; margin: 0 auto; }
+  .wrap { max-width: 960px; margin: 0 auto; }
+
   .top-row {
     display: flex;
     justify-content: space-between;
@@ -22,78 +65,177 @@
     margin-bottom: 6px;
   }
   h1 { font-size: 22px; margin: 0; }
-  .subtitle { color: #6b7280; font-size: 13px; margin-bottom: 18px; }
-  .sheet-link {
+  .subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 14px; }
+
+  .top-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn-pill {
     font-size: 13px;
     color: #2563eb;
     text-decoration: none;
-    border: 1px solid #dbeafe;
-    background: #eff6ff;
+    border: 1px solid #93c5fd;
+    background: transparent;
     padding: 6px 12px;
     border-radius: 8px;
     white-space: nowrap;
+    cursor: pointer;
+    font-family: inherit;
   }
-  .sheet-link:hover { background: #dbeafe; }
+  [data-theme="dark"] .btn-pill { color: #93c5fd; border-color: #3b5480; }
+  .btn-pill:hover { background: rgba(37, 99, 235, 0.08); }
 
-  .summary { display: flex; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 16px; }
+  .tab-btn {
+    font-size: 13px;
+    font-weight: 600;
+    padding: 7px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--card-bg);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .tab-btn.active {
+    background: var(--tab-active-bg);
+    color: var(--tab-active-text);
+    border-color: var(--tab-active-bg);
+  }
+
+  .summary-row { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
   .summary-card {
-    background: #fff;
-    border: 1px solid #e5e7eb;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
     border-radius: 10px;
     padding: 10px 16px;
-    min-width: 110px;
+    min-width: 130px;
+    flex: 1;
   }
-  .summary-card .num { font-size: 22px; font-weight: 700; }
-  .summary-card .label { font-size: 12px; color: #6b7280; }
-  .summary-card.down .num { color: #dc2626; }
-  .summary-card.up .num { color: #16a34a; }
-  .summary-card.warn .num { color: #d97706; }
+  .summary-card .num { font-size: 20px; font-weight: 700; }
+  .summary-card .label { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .summary-card.good .num { color: var(--up-text); }
+  .summary-card.bad .num { color: var(--down-text); }
 
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-    background: #fff;
+  .count-bar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
     border-radius: 10px;
+    padding: 10px 16px;
+    margin-bottom: 16px;
+    font-size: 13px;
+    flex-wrap: wrap;
+  }
+  .count-bar b { font-size: 15px; }
+  .count-item { display: flex; align-items: center; gap: 6px; }
+  .count-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .count-dot.up { background: var(--up); }
+  .count-dot.down { background: var(--down); }
+  .count-dot.warn { background: #f59e0b; }
+
+  .list {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
     overflow: hidden;
-    border: 1px solid #e5e7eb;
   }
-  thead th {
-    text-align: left;
-    padding: 10px 12px;
-    border-bottom: 2px solid #e5e7eb;
-    color: #6b7280;
+  .row {
+    display: flex;
+    align-items: center;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    gap: 14px;
+  }
+  .row:last-child { border-bottom: none; }
+  .row:hover { background: var(--row-hover); }
+
+  .status-icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 14px;
+    color: #fff;
+    font-weight: 700;
+  }
+  .status-icon.up { background: var(--up); }
+  .status-icon.down { background: var(--down); }
+
+  .row-main { flex: 1; min-width: 0; }
+  .row-name {
     font-weight: 600;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    background: #fafafa;
+    font-size: 14px;
+    color: var(--text);
+    text-decoration: none;
+    display: block;
   }
-  tbody td { padding: 10px 12px; border-bottom: 1px solid #f1f2f4; vertical-align: middle; }
-  tbody tr:hover { background: #fafafa; }
-  a.site-link { color: #1a1a1a; text-decoration: none; font-weight: 600; }
-  a.site-link:hover { text-decoration: underline; }
-  .url-sub { display: block; color: #9ca3af; font-size: 11px; font-weight: 400; }
-
-  .pill {
-    display: inline-flex; align-items: center; gap: 5px;
-    padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700;
+  .row-name:hover { text-decoration: underline; }
+  .row-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 3px;
   }
-  .pill .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
-  .pill.up { background: #dcfce7; color: #15803d; }
-  .pill.up .dot { background: #22c55e; }
-  .pill.down { background: #fee2e2; color: #b91c1c; }
-  .pill.down .dot { background: #ef4444; }
+  .type-tag {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-muted);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    letter-spacing: 0.02em;
+  }
+  .checked-ago { font-size: 12px; color: var(--text-faint); }
 
-  .days-left { font-weight: 700; padding: 2px 8px; border-radius: 6px; font-size: 12px; }
-  .days-ok { color: #15803d; }
-  .days-warn { background: #fef3c7; color: #b45309; }
-  .days-critical { background: #fee2e2; color: #b91c1c; }
-  .days-unknown { color: #9ca3af; font-size: 11px; }
+  .mini-bar { display: flex; gap: 2px; margin-top: 7px; align-items: flex-end; height: 14px; }
+  .mini-bar .tick { width: 4px; height: 100%; border-radius: 1px; background: var(--tick-empty); }
+  .mini-bar .tick.up { background: var(--up); }
+  .mini-bar .tick.down { background: var(--down); }
 
-  .state { text-align: center; padding: 60px 20px; color: #6b7280; }
-  .state.error { color: #b91c1c; }
-  footer { margin-top: 16px; font-size: 11px; color: #9ca3af; }
+  .row-right { text-align: right; flex-shrink: 0; }
+  .status-label { font-size: 13px; font-weight: 700; }
+  .status-label.up { color: var(--up-text); }
+  .status-label.down { color: var(--down-text); }
+  .uptime-pct { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .expiry-tags { display: flex; gap: 6px; margin-top: 4px; justify-content: flex-end; }
+  .expiry-tag { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px; }
+  .expiry-ok { color: var(--text-faint); }
+  .expiry-warn { background: var(--warn-bg); color: var(--warn-text); }
+  .expiry-critical { background: var(--critical-bg); color: var(--critical-text); }
+
+  .incident-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .incident-row:last-child { border-bottom: none; }
+  .incident-icon {
+    width: 26px; height: 26px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; color: #fff; font-weight: 700; font-size: 13px;
+  }
+  .incident-icon.ongoing { background: var(--down); }
+  .incident-icon.resolved { background: var(--text-faint); }
+  .incident-main { flex: 1; min-width: 0; }
+  .incident-name { font-weight: 600; font-size: 14px; }
+  .incident-time { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .incident-badge {
+    font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px;
+    flex-shrink: 0;
+  }
+  .incident-badge.ongoing { background: var(--critical-bg); color: var(--critical-text); }
+  .incident-badge.resolved { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
+
+  .state { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+  .state.error { color: var(--down-text); }
+  footer { margin-top: 14px; font-size: 11px; color: var(--text-faint); text-align: center; }
 </style>
 </head>
 <body>
@@ -104,34 +246,174 @@
       <h1>Client Site Monitor</h1>
       <div class="subtitle">Uptime, SSL &amp; domain expiry across all monitored client sites</div>
     </div>
-    <!-- Replace SHEET_URL_HERE with the Google Sheet's share link -->
-    <a class="sheet-link" href="https://docs.google.com/spreadsheets/d/1kGXRxCouDyVG_I_FNn0ERpTnsoxgKSjKfdUoDQ6i_ns/edit" target="_blank" rel="noopener">Edit monitor list / recipients &rarr;</a>
+    <div class="top-actions">
+      <button class="btn-pill" id="theme-toggle">Dark mode</button>
+      <a class="btn-pill" href="https://docs.google.com/spreadsheets/d/1kGXRxCouDyVG_I_FNn0ERpTnsoxgKSjKfdUoDQ6i_ns/edit" target="_blank" rel="noopener">Edit monitor list / recipients &rarr;</a>
+    </div>
   </div>
 
-  <div id="summary" class="summary"></div>
-  <div id="content"><div class="state" id="loading">Loading status data&hellip;</div></div>
+  <div class="tabs">
+    <button class="tab-btn active" id="tab-monitors">Monitors</button>
+    <button class="tab-btn" id="tab-incidents">Incidents</button>
+  </div>
+
+  <div id="view-monitors">
+    <div id="summary24h" class="summary-row"></div>
+    <div id="countbar" class="count-bar"></div>
+    <div id="content"><div class="state" id="loading">Loading status data&hellip;</div></div>
+  </div>
+
+  <div id="view-incidents" style="display:none;">
+    <div id="incidents-content"><div class="state">Loading incident history&hellip;</div></div>
+  </div>
+
   <footer id="footer"></footer>
 
 </div>
 
 <script>
-// Replace with your deployed Worker URL, e.g. https://client-site-monitor-worker.<your-subdomain>.workers.dev
 const WORKER_URL = "https://client-site-monitor-worker.john-7d8.workers.dev";
-const REFRESH_INTERVAL_MS = 90 * 1000; // auto-refresh every 90 seconds
+const REFRESH_INTERVAL_MS = 90 * 1000;
+const HISTORY_TICKS = 30; // how many recent checks to show in each mini bar
+
+// ---------------------------------------------------------------------------
+// Theme
+// ---------------------------------------------------------------------------
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  document.getElementById("theme-toggle").textContent = theme === "dark" ? "Light mode" : "Dark mode";
+  localStorage.setItem("dashboardTheme", theme);
+}
+(function initTheme() {
+  const saved = localStorage.getItem("dashboardTheme");
+  const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  applyTheme(saved || (prefersDark ? "dark" : "light"));
+})();
+document.getElementById("theme-toggle").addEventListener("click", () => {
+  const current = document.documentElement.getAttribute("data-theme");
+  applyTheme(current === "dark" ? "light" : "dark");
+});
+
+// ---------------------------------------------------------------------------
+// Tabs
+// ---------------------------------------------------------------------------
+document.getElementById("tab-monitors").addEventListener("click", () => switchTab("monitors"));
+document.getElementById("tab-incidents").addEventListener("click", () => switchTab("incidents"));
+function switchTab(name) {
+  document.getElementById("view-monitors").style.display = name === "monitors" ? "" : "none";
+  document.getElementById("view-incidents").style.display = name === "incidents" ? "" : "none";
+  document.getElementById("tab-monitors").classList.toggle("active", name === "monitors");
+  document.getElementById("tab-incidents").classList.toggle("active", name === "incidents");
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+function parseTimestamp(str) {
+  if (!str) return null;
+  // Expected format: "YYYY-MM-DD HH:MM UTC"
+  const cleaned = str.replace(" UTC", "Z").replace(" ", "T");
+  const d = new Date(cleaned);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function timeAgo(date) {
+  if (!date) return "—";
+  const diffMs = Date.now() - date.getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return mins + " min ago";
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return hrs + " hr" + (hrs === 1 ? "" : "s") + " ago";
+  const days = Math.floor(hrs / 24);
+  return days + " day" + (days === 1 ? "" : "s") + " ago";
+}
+
+function formatDuration(ms) {
+  const mins = Math.round(ms / 60000);
+  if (mins < 60) return mins + "m";
+  const hrs = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  if (hrs < 24) return hrs + "h " + remMins + "m";
+  const days = Math.floor(hrs / 24);
+  const remHrs = hrs % 24;
+  return days + "d " + remHrs + "h";
+}
+
+function formatDateTime(date) {
+  if (!date) return "—";
+  return date.toLocaleString("en-GB", {
+    day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "UTC"
+  }) + " UTC";
+}
 
 function daysClass(days) {
-  if (days === "" || days === undefined || isNaN(parseInt(days))) return "days-unknown";
+  if (days === "" || days === undefined || isNaN(parseInt(days))) return "expiry-ok";
   const d = parseInt(days);
-  if (d <= 7) return "days-critical";
-  if (d <= 30) return "days-warn";
-  return "days-ok";
-}
-function daysLabel(days) {
-  if (days === "" || days === undefined || isNaN(parseInt(days))) return "—";
-  return parseInt(days) + "d";
+  if (d <= 7) return "expiry-critical";
+  if (d <= 30) return "expiry-warn";
+  return "expiry-ok";
 }
 
-function render(rows) {
+// ---------------------------------------------------------------------------
+// History processing
+// ---------------------------------------------------------------------------
+function groupHistoryByName(history) {
+  const bySite = {};
+  history.forEach(h => {
+    const name = h["Name"];
+    if (!name) return;
+    const t = parseTimestamp(h["Timestamp (UTC)"]);
+    if (!t) return;
+    if (!bySite[name]) bySite[name] = [];
+    bySite[name].push({ time: t, status: h["Status"], detail: h["Detail"] });
+  });
+  Object.values(bySite).forEach(entries => entries.sort((a, b) => a.time - b.time));
+  return bySite;
+}
+
+// Derives incidents (DOWN streaks) per site from its sorted history entries.
+function deriveIncidents(bySite) {
+  const incidents = [];
+  Object.entries(bySite).forEach(([name, entries]) => {
+    let openIncident = null;
+    entries.forEach(e => {
+      if (e.status === "DOWN") {
+        if (!openIncident) openIncident = { name, start: e.time, end: null };
+      } else if (openIncident) {
+        openIncident.end = e.time;
+        incidents.push(openIncident);
+        openIncident = null;
+      }
+    });
+    if (openIncident) incidents.push(openIncident); // still ongoing
+  });
+  incidents.sort((a, b) => b.start - a.start);
+  return incidents;
+}
+
+function uptimePercent(entries) {
+  if (!entries.length) return null;
+  const upCount = entries.filter(e => e.status === "UP").length;
+  return (upCount / entries.length) * 100;
+}
+
+function renderMiniBar(entries) {
+  const recent = entries.slice(-HISTORY_TICKS);
+  const padCount = Math.max(0, HISTORY_TICKS - recent.length);
+  let html = "";
+  for (let i = 0; i < padCount; i++) html += `<span class="tick"></span>`;
+  recent.forEach(e => {
+    const cls = e.status === "DOWN" ? "down" : "up";
+    html += `<span class="tick ${cls}" title="${formatDateTime(e.time)}: ${e.status}"></span>`;
+  });
+  return html;
+}
+
+// ---------------------------------------------------------------------------
+// Rendering: Monitors tab
+// ---------------------------------------------------------------------------
+function render(rows, bySite) {
   const loading = document.getElementById("loading");
   if (loading) loading.remove();
 
@@ -143,54 +425,145 @@ function render(rows) {
     return (!isNaN(s) && s <= 30) || (!isNaN(d) && d <= 30);
   }).length;
 
-  document.getElementById("summary").innerHTML = `
-    <div class="summary-card up"><div class="num">${upCount}</div><div class="label">Up</div></div>
-    <div class="summary-card down"><div class="num">${downCount}</div><div class="label">Down</div></div>
-    <div class="summary-card warn"><div class="num">${expiringCount}</div><div class="label">Expiring &le; 30d</div></div>
-    <div class="summary-card"><div class="num">${rows.length}</div><div class="label">Total monitored</div></div>
+  document.getElementById("countbar").innerHTML = `
+    <div class="count-item"><span class="count-dot up"></span><b>${upCount}</b> up</div>
+    <div class="count-item"><span class="count-dot down"></span><b>${downCount}</b> down</div>
+    <div class="count-item"><span class="count-dot warn"></span><b>${expiringCount}</b> expiring &le; 30d</div>
+    <div class="count-item"><b>${rows.length}</b> total monitored</div>
   `;
+
+  renderSummary24h(bySite, downCount > 0);
 
   const sorted = [...rows].sort((a, b) => {
     if (a["Status"] !== b["Status"]) return a["Status"] === "DOWN" ? -1 : 1;
     return (a["Name"] || "").localeCompare(b["Name"] || "");
   });
 
-  const bodyRows = sorted.map(r => {
-    const status = r["Status"] === "DOWN" ? "down" : "up";
-    const sslClass = daysClass(r["SSL Days Left"]);
-    const domClass = daysClass(r["Domain Days Left"]);
+  const rowsHtml = sorted.map(r => {
+    const isDown = r["Status"] === "DOWN";
+    const statusClass = isDown ? "down" : "up";
+    const icon = isDown ? "&#9679;" : "&#9650;";
+    const sslDays = parseInt(r["SSL Days Left"]);
+    const domDays = parseInt(r["Domain Days Left"]);
+    const tags = [];
+    if (!isNaN(sslDays)) tags.push(`<span class="expiry-tag ${daysClass(sslDays)}">SSL ${sslDays}d</span>`);
+    if (!isNaN(domDays)) tags.push(`<span class="expiry-tag ${daysClass(domDays)}">Domain ${domDays}d</span>`);
+
+    const entries = bySite[r["Name"]] || [];
+    const pct = uptimePercent(entries);
+    const pctLabel = pct === null ? "" : `<div class="uptime-pct">${pct.toFixed(2)}% uptime</div>`;
+    const barHtml = entries.length ? `<div class="mini-bar">${renderMiniBar(entries)}</div>` : "";
+
     return `
-      <tr>
-        <td>
-          <a class="site-link" href="${r['URL']}" target="_blank" rel="noopener">${r["Name"]}</a>
-          <span class="url-sub">${r["URL"]}</span>
-        </td>
-        <td><span class="pill ${status}"><span class="dot"></span>${r["Status"] || "—"}</span></td>
-        <td>${r["Last Checked (UTC)"] || "—"}</td>
-        <td><span class="days-left ${sslClass}">${daysLabel(r["SSL Days Left"])}</span>
-            ${r["SSL Expiry Date"] && r["SSL Expiry Date"] !== "ERROR" ? `<span class="url-sub">${r["SSL Expiry Date"]}</span>` : ""}</td>
-        <td><span class="days-left ${domClass}">${daysLabel(r["Domain Days Left"])}</span>
-            ${r["Domain Expiry Date"] && !["ERROR","UNKNOWN"].includes(r["Domain Expiry Date"]) ? `<span class="url-sub">${r["Domain Expiry Date"]}</span>` : ""}</td>
-      </tr>
+      <div class="row">
+        <div class="status-icon ${statusClass}">${icon}</div>
+        <div class="row-main">
+          <a class="row-name" href="${r['URL']}" target="_blank" rel="noopener">${r["Name"]}</a>
+          <div class="row-meta">
+            <span class="type-tag">HTTP</span>
+            <span class="checked-ago">checked ${timeAgo(parseTimestamp(r["Last Checked (UTC)"]))}</span>
+          </div>
+          ${barHtml}
+        </div>
+        <div class="row-right">
+          <div class="status-label ${statusClass}">${isDown ? "Down" : "Up"}</div>
+          ${pctLabel}
+          <div class="expiry-tags">${tags.join("")}</div>
+        </div>
+      </div>
     `;
   }).join("");
 
-  document.getElementById("content").innerHTML = `
-    <table>
-      <thead>
-        <tr><th>Site</th><th>Status</th><th>Last Checked (UTC)</th><th>SSL Expiry</th><th>Domain Expiry</th></tr>
-      </thead>
-      <tbody>${bodyRows}</tbody>
-    </table>
-  `;
+  document.getElementById("content").innerHTML = `<div class="list">${rowsHtml}</div>`;
 
   document.getElementById("footer").textContent =
     "Auto-refreshes every " + (REFRESH_INTERVAL_MS / 1000) + "s. Underlying checks run every 30 minutes.";
 }
 
+function renderSummary24h(bySite, anyDownNow) {
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  let upCount = 0, totalCount = 0;
+  const allIncidents = deriveIncidents(bySite);
+  const incidents24h = allIncidents.filter(i => i.start.getTime() >= cutoff);
+
+  Object.values(bySite).forEach(entries => {
+    entries.forEach(e => {
+      if (e.time.getTime() >= cutoff) {
+        totalCount++;
+        if (e.status === "UP") upCount++;
+      }
+    });
+  });
+
+  const uptimePct = totalCount ? (upCount / totalCount * 100) : null;
+
+  // Time since the most recently resolved incident (across all sites).
+  const resolved = allIncidents.filter(i => i.end).sort((a, b) => b.end - a.end);
+  let sinceLabel = "No data yet";
+  if (anyDownNow) {
+    sinceLabel = "Ongoing";
+  } else if (resolved.length) {
+    sinceLabel = formatDuration(Date.now() - resolved[0].end.getTime());
+  } else if (totalCount) {
+    sinceLabel = "No incidents";
+  }
+
+  document.getElementById("summary24h").innerHTML = `
+    <div class="summary-card ${uptimePct !== null && uptimePct < 100 ? 'bad' : 'good'}">
+      <div class="num">${uptimePct === null ? '—' : uptimePct.toFixed(2) + '%'}</div>
+      <div class="label">Uptime (24h)</div>
+    </div>
+    <div class="summary-card ${incidents24h.length ? 'bad' : 'good'}">
+      <div class="num">${incidents24h.length}</div>
+      <div class="label">Incidents (24h)</div>
+    </div>
+    <div class="summary-card ${anyDownNow ? 'bad' : 'good'}">
+      <div class="num">${sinceLabel}</div>
+      <div class="label">${anyDownNow ? 'Currently down' : 'Since last incident'}</div>
+    </div>
+  `;
+}
+
+// ---------------------------------------------------------------------------
+// Rendering: Incidents tab
+// ---------------------------------------------------------------------------
+function renderIncidents(bySite) {
+  const incidents = deriveIncidents(bySite);
+
+  if (!incidents.length) {
+    document.getElementById("incidents-content").innerHTML =
+      `<div class="state">No incidents recorded. History is kept for the last 35 days.</div>`;
+    return;
+  }
+
+  const html = incidents.map(i => {
+    const ongoing = !i.end;
+    const duration = ongoing ? Date.now() - i.start.getTime() : i.end - i.start;
+    const timeLabel = ongoing
+      ? `Started ${formatDateTime(i.start)} &mdash; still down`
+      : `${formatDateTime(i.start)} &rarr; ${formatDateTime(i.end)}`;
+    return `
+      <div class="incident-row">
+        <div class="incident-icon ${ongoing ? 'ongoing' : 'resolved'}">${ongoing ? '!' : '&#10003;'}</div>
+        <div class="incident-main">
+          <div class="incident-name">${i.name}</div>
+          <div class="incident-time">${timeLabel} &middot; ${formatDuration(duration)}</div>
+        </div>
+        <div class="incident-badge ${ongoing ? 'ongoing' : 'resolved'}">${ongoing ? 'Ongoing' : 'Resolved'}</div>
+      </div>
+    `;
+  }).join("");
+
+  document.getElementById("incidents-content").innerHTML = `<div class="list">${html}</div>`;
+}
+
+// ---------------------------------------------------------------------------
+// Fetch + error handling
+// ---------------------------------------------------------------------------
 function renderError(message) {
-  document.getElementById("content").innerHTML =
-    `<div class="state error">Couldn't load status data.<br>${message}</div>`;
+  const html = `<div class="state error">Couldn't load status data.<br>${message}</div>`;
+  document.getElementById("content").innerHTML = html;
+  document.getElementById("incidents-content").innerHTML = html;
 }
 
 async function load() {
@@ -199,7 +572,9 @@ async function load() {
     const data = await res.json();
     if (data.error) { renderError(data.error); return; }
     if (!data.rows || data.rows.length === 0) { renderError("No rows returned."); return; }
-    render(data.rows);
+    const bySite = groupHistoryByName(data.history || []);
+    render(data.rows, bySite);
+    renderIncidents(bySite);
   } catch (e) {
     renderError(e.message || String(e));
   }

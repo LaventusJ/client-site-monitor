@@ -1,12 +1,7 @@
 name: Site Monitor
 
 on:
-  schedule:
-    # Uptime-only check, every 30 minutes
-    - cron: '*/30 * * * *'
-    # Full check (uptime + SSL + domain expiry), once a day at 06:00 UTC
-    - cron: '0 6 * * *'
-  workflow_dispatch:
+    workflow_dispatch:
     inputs:
       mode:
         description: 'Check mode: uptime or full'

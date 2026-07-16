@@ -402,21 +402,18 @@ function groupHistoryByName(history) {
   return bySite;
 }
 
-// Derives incidents (DOWN streaks) per site from its sorted history entries.
-function deriveIncidents(bySite) {
+// Parses the Incidents tab rows (written by monitor.py on each outage)
+// into {name, start, end} objects, newest first.
+function parseIncidents(incidentRows) {
   const incidents = [];
-  Object.entries(bySite).forEach(([name, entries]) => {
-    let openIncident = null;
-    entries.forEach(e => {
-      if (e.status === "DOWN") {
-        if (!openIncident) openIncident = { name, start: e.time, end: null };
-      } else if (openIncident) {
-        openIncident.end = e.time;
-        incidents.push(openIncident);
-        openIncident = null;
-      }
+  (incidentRows || []).forEach(r => {
+    const start = parseTimestamp(r["Start (UTC)"]);
+    if (!r["Name"] || !start) return;
+    incidents.push({
+      name: r["Name"],
+      start,
+      end: parseTimestamp(r["End (UTC)"]) || null,
     });
-    if (openIncident) incidents.push(openIncident); // still ongoing
   });
   incidents.sort((a, b) => b.start - a.start);
   return incidents;
@@ -443,7 +440,7 @@ function renderMiniBar(entries) {
 // ---------------------------------------------------------------------------
 // Rendering: Monitors tab
 // ---------------------------------------------------------------------------
-function render(rows, bySite) {
+function render(rows, bySite, incidents) {
   const loading = document.getElementById("loading");
   if (loading) loading.remove();
 
@@ -462,7 +459,7 @@ function render(rows, bySite) {
     <div class="count-item"><b>${rows.length}</b> total monitored</div>
   `;
 
-  renderSummary24h(bySite, downCount > 0);
+  renderSummary24h(bySite, incidents, downCount > 0);
   renderExpiringPanel(rows);
 
   const sorted = [...rows].sort((a, b) => {
@@ -508,7 +505,7 @@ function render(rows, bySite) {
   document.getElementById("content").innerHTML = `<div class="list">${rowsHtml}</div>`;
 
   document.getElementById("footer").textContent =
-    "Auto-refreshes every " + (REFRESH_INTERVAL_MS / 1000) + "s. Underlying checks run every 30 minutes.";
+    "Auto-refreshes every " + (REFRESH_INTERVAL_MS / 1000) + "s. Underlying checks run every 5 minutes.";
 }
 
 function renderExpiringPanel(rows) {
@@ -547,10 +544,9 @@ function renderExpiringPanel(rows) {
   panel.innerHTML = `<div class="panel-title">Expiring soon</div>${rowsHtml}`;
 }
 
-function renderSummary24h(bySite, anyDownNow) {
+function renderSummary24h(bySite, allIncidents, anyDownNow) {
   const cutoff = Date.now() - 24 * 60 * 60 * 1000;
   let upCount = 0, totalCount = 0;
-  const allIncidents = deriveIncidents(bySite);
   const incidents24h = allIncidents.filter(i => i.start.getTime() >= cutoff);
 
   Object.values(bySite).forEach(entries => {
@@ -594,12 +590,10 @@ function renderSummary24h(bySite, anyDownNow) {
 // ---------------------------------------------------------------------------
 // Rendering: Incidents tab
 // ---------------------------------------------------------------------------
-function renderIncidents(bySite) {
-  const incidents = deriveIncidents(bySite);
-
+function renderIncidents(incidents) {
   if (!incidents.length) {
     document.getElementById("incidents-content").innerHTML =
-      `<div class="state">No incidents recorded. History is kept for the last 35 days.</div>`;
+      `<div class="state">No incidents recorded in the last 60 days.</div>`;
     return;
   }
 
@@ -640,8 +634,9 @@ async function load() {
     if (data.error) { renderError(data.error); return; }
     if (!data.rows || data.rows.length === 0) { renderError("No rows returned."); return; }
     const bySite = groupHistoryByName(data.history || []);
-    render(data.rows, bySite);
-    renderIncidents(bySite);
+    const incidents = parseIncidents(data.incidents || []);
+    render(data.rows, bySite, incidents);
+    renderIncidents(incidents);
   } catch (e) {
     renderError(e.message || String(e));
   }

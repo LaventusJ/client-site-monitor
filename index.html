@@ -372,9 +372,10 @@ function formatDuration(ms) {
 
 function formatDateTime(date) {
   if (!date) return "—";
+  // Display in UK local time (handles BST/GMT switches automatically).
   return date.toLocaleString("en-GB", {
-    day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "UTC"
-  }) + " UTC";
+    day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Europe/London"
+  });
 }
 
 function daysClass(days) {

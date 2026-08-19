@@ -221,15 +221,31 @@
   }
   .checked-ago { font-size: 12px; color: var(--text-faint); }
 
-  .mini-bar { display: flex; gap: 2px; margin-top: 7px; align-items: flex-end; height: 14px; }
-  .mini-bar .tick { width: 4px; height: 100%; border-radius: 1px; background: var(--tick-empty); }
-  .mini-bar .tick.up { background: var(--up); }
-  .mini-bar .tick.down { background: var(--down); }
+  /* History bar: fixed 48-column grid spanning a real 24h window (see
+     BAR_BUCKET_COUNT below), so ticks scale with row width automatically
+     and are noticeably bigger than the old fixed-width ticks. Marker
+     ticks (24h/12h/6h/3h/1h/now) are taller so the eye can line them up
+     with the labels row underneath. */
+  .mini-bar { display: grid; grid-template-columns: repeat(48, 1fr); gap: 1px; align-items: end; height: 22px; margin-top: 8px; }
+  .mini-bar .tick { height: 100%; border-radius: 1px; background: var(--tick-empty); }
+  .mini-bar .tick.marker { height: 130%; }
+  .bar-labels { display: grid; grid-template-columns: repeat(48, 1fr); margin-top: 3px; font-size: 9px; color: var(--text-faint); }
 
   .row-right { text-align: right; flex-shrink: 0; }
   .status-label { font-size: 13px; font-weight: 700; }
   .status-label.up { color: var(--up-text); }
   .status-label.down { color: var(--down-text); }
+
+  /* Per-row stat boxes: Uptime/Down, SSL, Domain -- replaces the old
+     inline status-label/uptime-pct/expiry-tags text stack with clearer,
+     scannable tiles matching the top summary cards' visual language. */
+  .stat-boxes { display: flex; gap: 6px; margin-top: 6px; justify-content: flex-end; flex-wrap: wrap; }
+  .stat-box { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; text-align: center; min-width: 58px; }
+  .stat-box .stat-num { font-size: 13px; font-weight: 700; }
+  .stat-box .stat-num.expiry-warn { color: var(--warn-text); }
+  .stat-box .stat-num.expiry-critical { color: var(--critical-text); }
+  .stat-box .stat-label { font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.02em; margin-top: 1px; }
+
   .uptime-pct { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
   .expiry-tags { display: flex; gap: 6px; margin-top: 4px; justify-content: flex-end; }
   .expiry-tag { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px; }
@@ -304,7 +320,22 @@
 <script>
 const WORKER_URL = "https://client-site-monitor-worker.john-7d8.workers.dev";
 const REFRESH_INTERVAL_MS = 90 * 1000;
-const HISTORY_TICKS = 30; // how many recent checks to show in each mini bar
+
+// History bar: a fixed 24h window bucketed into 30-min segments (48 total),
+// so the bar always represents a full day regardless of check frequency,
+// with bolder marker ticks + labels at these hours-ago points.
+const BAR_WINDOW_HOURS = 24;
+const BAR_BUCKET_MINUTES = 30;
+const BAR_BUCKET_COUNT = (BAR_WINDOW_HOURS * 60) / BAR_BUCKET_MINUTES;
+const BAR_MARKER_HOURS = [24, 12, 6, 3, 1, 0]; // 0 = "now"
+
+const UP_COLOR = "#22c55e";
+const DOWN_COLOR = "#ef4444";
+
+// Domain-expiry box: solid green at/above this many days, then a smooth
+// gradient toward red as the renewal date approaches (no hard bands, unlike
+// the SSL box or the Slack alert thresholds in monitor.py).
+const DOMAIN_GRADIENT_FLOOR_DAYS = 30;
 
 // ---------------------------------------------------------------------------
 // Theme
@@ -386,6 +417,51 @@ function daysClass(days) {
   return "expiry-ok";
 }
 
+function hexToRgb(hex) {
+  const v = parseInt(hex.slice(1), 16);
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+}
+
+function lerpColor(hexA, hexB, t) {
+  t = Math.max(0, Math.min(1, t));
+  const a = hexToRgb(hexA), b = hexToRgb(hexB);
+  const rgb = a.map((c, i) => Math.round(c + (b[i] - c) * t));
+  return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+}
+
+// Solid green at/above DOMAIN_GRADIENT_FLOOR_DAYS, then a smooth blend
+// toward red as days-left shrinks to 0 -- a continuous gradient rather
+// than the hard-banded SSL/Slack thresholds.
+function domainGradientColor(days) {
+  if (isNaN(days)) return null;
+  if (days >= DOMAIN_GRADIENT_FLOOR_DAYS) return UP_COLOR;
+  if (days <= 0) return DOWN_COLOR;
+  const t = 1 - days / DOMAIN_GRADIENT_FLOOR_DAYS;
+  return lerpColor(UP_COLOR, DOWN_COLOR, t);
+}
+
+// Maps an "hours ago" marker to its bucket index (0 = oldest/leftmost,
+// BAR_BUCKET_COUNT-1 = most recent/rightmost) for label + marker-tick placement.
+function markerBucketIndex(hoursAgo) {
+  const idx = BAR_BUCKET_COUNT - Math.round((hoursAgo * 60) / BAR_BUCKET_MINUTES);
+  return Math.max(0, Math.min(BAR_BUCKET_COUNT - 1, idx));
+}
+
+// Finds when a currently-down site went down: prefers the open Incidents
+// row (what monitor.py itself uses to track outages), falling back to
+// walking back through this site's own History if no incident row exists
+// yet (e.g. right at the moment it just flipped to DOWN).
+function findDownSince(name, entries, incidents) {
+  const ongoing = incidents.find(i => i.name === name && !i.end);
+  if (ongoing) return ongoing.start;
+  for (let i = entries.length - 1; i >= 0; i--) {
+    if (entries[i].status !== "DOWN") {
+      return i + 1 < entries.length ? entries[i + 1].time : null;
+    }
+  }
+  return entries.length ? entries[0].time : null;
+}
+
 // ---------------------------------------------------------------------------
 // History processing
 // ---------------------------------------------------------------------------
@@ -426,16 +502,63 @@ function uptimePercent(entries) {
   return (upCount / entries.length) * 100;
 }
 
-function renderMiniBar(entries) {
-  const recent = entries.slice(-HISTORY_TICKS);
-  const padCount = Math.max(0, HISTORY_TICKS - recent.length);
-  let html = "";
-  for (let i = 0; i < padCount; i++) html += `<span class="tick"></span>`;
-  recent.forEach(e => {
-    const cls = e.status === "DOWN" ? "down" : "up";
-    html += `<span class="tick ${cls}" title="${formatDateTime(e.time)}: ${e.status}"></span>`;
+// Buckets a site's history into BAR_BUCKET_COUNT fixed 30-min windows
+// spanning the last 24h (regardless of how many real checks happened),
+// so the bar always shows a full day. Each bucket tracks total checks and
+// how many failed, so bucketColor() can grade the color by how bad that
+// window was rather than one bad check painting the whole segment red.
+function bucketHistory(entries) {
+  const buckets = new Array(BAR_BUCKET_COUNT).fill(null);
+  const nowMs = Date.now();
+  const windowMs = BAR_WINDOW_HOURS * 60 * 60 * 1000;
+  const bucketMs = BAR_BUCKET_MINUTES * 60 * 1000;
+  entries.forEach(e => {
+    const age = nowMs - e.time.getTime();
+    if (age < 0 || age >= windowMs) return;
+    const idx = BAR_BUCKET_COUNT - 1 - Math.floor(age / bucketMs);
+    if (idx < 0 || idx >= BAR_BUCKET_COUNT) return;
+    if (!buckets[idx]) buckets[idx] = { total: 0, down: 0 };
+    buckets[idx].total++;
+    if (e.status === "DOWN") buckets[idx].down++;
   });
-  return html;
+  return buckets;
+}
+
+// Graduated color per bucket (Statuspage-style): 0 failed checks in the
+// window = solid green, all failed = solid red, anything in between blends
+// toward red -- and even a single failed check nudges noticeably off pure
+// green so a small blip isn't invisible, without looking as severe as a
+// full outage the way a flat "any failure = red" would.
+function bucketColor(bucket) {
+  if (!bucket || !bucket.total) return null;
+  const failFraction = bucket.down / bucket.total;
+  if (failFraction === 0) return UP_COLOR;
+  const t = 0.35 + failFraction * 0.65;
+  return lerpColor(UP_COLOR, DOWN_COLOR, t);
+}
+
+function renderMiniBar(entries) {
+  const buckets = bucketHistory(entries);
+  const markerIndexes = new Set(BAR_MARKER_HOURS.map(markerBucketIndex));
+
+  const ticks = buckets.map((b, i) => {
+    const color = bucketColor(b);
+    const style = color ? ` style="background:${color}"` : "";
+    const marker = markerIndexes.has(i) ? " marker" : "";
+    const title = b ? `${b.total} check${b.total === 1 ? "" : "s"}, ${b.down} down` : "no data";
+    return `<span class="tick${marker}"${style} title="${title}"></span>`;
+  }).join("");
+
+  const lastIdx = BAR_BUCKET_COUNT - 1;
+  const labels = buckets.map((_, i) => {
+    const hourLabel = BAR_MARKER_HOURS.find(h => markerBucketIndex(h) === i);
+    if (hourLabel === undefined) return "<span></span>";
+    const align = i === 0 ? "left" : i === lastIdx ? "right" : "center";
+    const text = hourLabel === 0 ? "now" : hourLabel + "h";
+    return `<span style="text-align:${align}">${text}</span>`;
+  }).join("");
+
+  return `<div class="mini-bar">${ticks}</div><div class="bar-labels">${labels}</div>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -474,14 +597,38 @@ function render(rows, bySite, incidents) {
     const icon = isDown ? "&#9679;" : "&#9650;";
     const sslDays = parseInt(r["SSL Days Left"]);
     const domDays = parseInt(r["Domain Days Left"]);
-    const tags = [];
-    if (!isNaN(sslDays)) tags.push(`<span class="expiry-tag ${daysClass(sslDays)}">SSL ${sslDays}d</span>`);
-    if (!isNaN(domDays)) tags.push(`<span class="expiry-tag ${daysClass(domDays)}">Domain ${domDays}d</span>`);
 
     const entries = bySite[r["Name"]] || [];
-    const pct = uptimePercent(entries);
-    const pctLabel = pct === null ? "" : `<div class="uptime-pct">${pct.toFixed(2)}% uptime</div>`;
-    const barHtml = entries.length ? `<div class="mini-bar">${renderMiniBar(entries)}</div>` : "";
+    const barHtml = entries.length ? renderMiniBar(entries) : "";
+
+    const uptimeBox = isDown
+      ? (() => {
+          const since = findDownSince(r["Name"], entries, incidents);
+          const elapsed = since ? formatDuration(Date.now() - since.getTime()) : "—";
+          const title = since ? `Since ${formatDateTime(since)}` : "";
+          return `<div class="stat-box" title="${title}">
+            <div class="stat-num" style="color:var(--down-text)">${elapsed}</div>
+            <div class="stat-label">Down for</div>
+          </div>`;
+        })()
+      : (() => {
+          const pct = uptimePercent(entries);
+          return `<div class="stat-box">
+            <div class="stat-num">${pct === null ? "—" : pct.toFixed(2) + "%"}</div>
+            <div class="stat-label">Uptime</div>
+          </div>`;
+        })();
+
+    const sslBox = isNaN(sslDays) ? "" : `<div class="stat-box">
+        <div class="stat-num ${daysClass(sslDays)}">${sslDays}d</div>
+        <div class="stat-label">SSL</div>
+      </div>`;
+
+    const domainColor = domainGradientColor(domDays);
+    const domainBox = isNaN(domDays) ? "" : `<div class="stat-box">
+        <div class="stat-num" style="color:${domainColor}">${domDays}d</div>
+        <div class="stat-label">Domain</div>
+      </div>`;
 
     return `
       <div class="row">
@@ -496,8 +643,7 @@ function render(rows, bySite, incidents) {
         </div>
         <div class="row-right">
           <div class="status-label ${statusClass}">${isDown ? "Down" : "Up"}</div>
-          ${pctLabel}
-          <div class="expiry-tags">${tags.join("")}</div>
+          <div class="stat-boxes">${uptimeBox}${sslBox}${domainBox}</div>
         </div>
       </div>
     `;

@@ -190,6 +190,11 @@
     font-size: 14px;
     color: #fff;
     font-weight: 700;
+    /* row-main/row-bar are now top-aligned (align-self: flex-start) instead
+       of vertically centered in the row, so nudge the icon down slightly to
+       line up with the name text's first line instead of the full row height. */
+    align-self: flex-start;
+    margin-top: 4px;
   }
   .status-icon.up { background: var(--up); }
   .status-icon.down { background: var(--down); }
@@ -197,7 +202,7 @@
   /* Fixed width, not flex:1 -- flex:1 was letting this box stretch far past
      the actual name text, which pushed row-bar out to wherever that
      stretched box ended instead of sitting in the true middle of the row. */
-  .row-main { flex: 0 0 230px; min-width: 0; }
+  .row-main { flex: 0 0 230px; min-width: 0; align-self: flex-start; }
   .row-name {
     font-weight: 600;
     font-size: 14px;
@@ -237,8 +242,8 @@
      left edge (small consistent gap, same as the row's other gaps) rather
      than centered, so the bar starts right after the name with no big empty
      stretch -- any leftover space falls on the right, before the stat boxes. */
-  .row-bar { flex: 1; min-width: 0; display: flex; justify-content: flex-start; }
-  .bar-inner { width: 240px; }
+  .row-bar { flex: 1; min-width: 0; display: flex; justify-content: flex-start; align-self: flex-start; }
+  .bar-inner { width: 300px; }
   .mini-bar { display: grid; grid-template-columns: repeat(48, 1fr); align-items: end; height: 22px; margin-top: 8px; }
   .mini-bar .tick { width: 1.5px; justify-self: center; height: 100%; border-radius: 1px; background: var(--tick-empty); }
   .mini-bar .tick.marker { height: 130%; }
@@ -248,7 +253,7 @@
      (Uptime/SSL/Domain) vs 2 (Uptime/SSL only) end up different widths,
      which pushes row-bar to a different x-position on every row instead
      of lining up in one consistent column. */
-  .row-right { text-align: right; flex-shrink: 0; width: 230px; }
+  .row-right { text-align: right; flex-shrink: 0; width: 260px; }
   .status-label { font-size: 13px; font-weight: 700; }
   .status-label.up { color: var(--up-text); }
   .status-label.down { color: var(--down-text); }
@@ -257,7 +262,7 @@
      inline status-label/uptime-pct/expiry-tags text stack with clearer,
      scannable tiles matching the top summary cards' visual language. */
   .stat-boxes { display: flex; gap: 6px; margin-top: 6px; justify-content: flex-end; flex-wrap: wrap; }
-  .stat-box { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; text-align: center; min-width: 58px; }
+  .stat-box { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 4px 14px; text-align: center; min-width: 72px; }
   .stat-box .stat-num { font-size: 13px; font-weight: 700; }
   .stat-box .stat-num.expiry-warn { color: var(--warn-text); }
   .stat-box .stat-num.expiry-critical { color: var(--critical-text); }

@@ -233,10 +233,11 @@
      them up with their label underneath. */
   /* row-bar is the one flexible column in the row -- it grows/shrinks to
      fill whatever space is left between the fixed-width name column and the
-     fixed-width stat-box column, and centers the fixed-size bar-inner
-     inside itself. That's what actually puts the bar in the "middle" of the
-     row regardless of name length or how many stat boxes a row has. */
-  .row-bar { flex: 1; min-width: 0; display: flex; justify-content: center; }
+     fixed-width stat-box column. The fixed-size bar-inner sits flush at its
+     left edge (small consistent gap, same as the row's other gaps) rather
+     than centered, so the bar starts right after the name with no big empty
+     stretch -- any leftover space falls on the right, before the stat boxes. */
+  .row-bar { flex: 1; min-width: 0; display: flex; justify-content: flex-start; }
   .bar-inner { width: 240px; }
   .mini-bar { display: grid; grid-template-columns: repeat(48, 1fr); align-items: end; height: 22px; margin-top: 8px; }
   .mini-bar .tick { width: 1.5px; justify-self: center; height: 100%; border-radius: 1px; background: var(--tick-empty); }

@@ -234,7 +234,11 @@
   .mini-bar .tick.marker { height: 130%; }
   .bar-labels { display: grid; grid-template-columns: repeat(48, 1fr); margin-top: 3px; font-size: 9px; color: var(--text-faint); }
 
-  .row-right { text-align: right; flex-shrink: 0; }
+  /* Fixed width (not content-based) -- otherwise rows with 3 stat boxes
+     (Uptime/SSL/Domain) vs 2 (Uptime/SSL only) end up different widths,
+     which pushes row-bar to a different x-position on every row instead
+     of lining up in one consistent column. */
+  .row-right { text-align: right; flex-shrink: 0; width: 230px; }
   .status-label { font-size: 13px; font-weight: 700; }
   .status-label.up { color: var(--up-text); }
   .status-label.down { color: var(--down-text); }

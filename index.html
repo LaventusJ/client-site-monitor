@@ -169,15 +169,28 @@
     border-radius: 12px;
     overflow: hidden;
   }
+  /* Row is a 3-equal-column grid -- the SAME 1fr/1fr/1fr + 12px-gap split as
+     .summary-row above, with no extra outer padding on .row itself (that's
+     what lets the grid track math match exactly). That's what makes column
+     2 (the bar) line up under the middle "Incidents (24h)" summary card:
+     both containers are the same total width and split into thirds the
+     same way, so their column boundaries land at the same x position. */
   .row {
-    display: flex;
-    align-items: center;
-    padding: 14px 18px;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    column-gap: 12px;
+    align-items: start;
+    padding: 14px 0;
     border-bottom: 1px solid var(--border);
-    gap: 14px;
   }
   .row:last-child { border-bottom: none; }
   .row:hover { background: var(--row-hover); }
+
+  /* Column 1: icon + name, packed together in their own flex row so they
+     don't add a 4th grid column -- the 18px left padding here replaces the
+     old .row left padding, giving the same visual inset without changing
+     the grid track widths. */
+  .row-left { display: flex; align-items: flex-start; gap: 10px; min-width: 0; padding-left: 18px; }
 
   .status-icon {
     width: 26px;
@@ -190,19 +203,12 @@
     font-size: 14px;
     color: #fff;
     font-weight: 700;
-    /* row-main/row-bar are now top-aligned (align-self: flex-start) instead
-       of vertically centered in the row, so nudge the icon down slightly to
-       line up with the name text's first line instead of the full row height. */
-    align-self: flex-start;
-    margin-top: 4px;
+    margin-top: 4px; /* nudge down to line up with the name text's first line */
   }
   .status-icon.up { background: var(--up); }
   .status-icon.down { background: var(--down); }
 
-  /* Fixed width, not flex:1 -- flex:1 was letting this box stretch far past
-     the actual name text, which pushed row-bar out to wherever that
-     stretched box ended instead of sitting in the true middle of the row. */
-  .row-main { flex: 0 0 230px; min-width: 0; align-self: flex-start; }
+  .row-main { flex: 1; min-width: 0; }
   .row-name {
     font-weight: 600;
     font-size: 14px;
@@ -229,31 +235,23 @@
   }
   .checked-ago { font-size: 12px; color: var(--text-faint); }
 
-  /* History bar: its own column between the name and the stat boxes (not
-     stacked under the name), so it sits in the middle of the row rather
-     than flush-left. Fixed 48-column grid spans a real 24h window (see
-     BAR_BUCKET_COUNT below); each tick is a thin, centered mark within its
-     column (not stretched edge-to-edge) so the bar reads as slim ticks.
-     Marker ticks (24h/12h/6h/3h/1h/now) are taller so the eye can line
-     them up with their label underneath. */
-  /* row-bar is the one flexible column in the row -- it grows/shrinks to
-     fill whatever space is left between the fixed-width name column and the
-     fixed-width stat-box column. The fixed-size bar-inner sits flush at its
-     left edge (small consistent gap, same as the row's other gaps) rather
-     than centered, so the bar starts right after the name with no big empty
-     stretch -- any leftover space falls on the right, before the stat boxes. */
-  .row-bar { flex: 1; min-width: 0; display: flex; justify-content: flex-start; align-self: flex-start; }
-  .bar-inner { width: 300px; }
+  /* History bar: column 2 of the row's 3-column grid, same width as the
+     "Incidents (24h)" summary card above. bar-inner fills it at 100% (no
+     fixed px width anymore -- the grid column width already matches).
+     48-column grid spans a real 24h window (see BAR_BUCKET_COUNT below);
+     each tick is a thin, centered mark within its column (not stretched
+     edge-to-edge) so the bar reads as slim ticks. Marker ticks (24h/18h/
+     12h/6h/now) are taller so the eye can line them up with their label. */
+  .row-bar { min-width: 0; }
+  .bar-inner { width: 100%; }
   .mini-bar { display: grid; grid-template-columns: repeat(48, 1fr); align-items: end; height: 22px; margin-top: 8px; }
   .mini-bar .tick { width: 1.5px; justify-self: center; height: 100%; border-radius: 1px; background: var(--tick-empty); }
   .mini-bar .tick.marker { height: 130%; }
   .bar-labels { display: grid; grid-template-columns: repeat(48, 1fr); margin-top: 3px; font-size: 9px; color: var(--text-faint); }
 
-  /* Fixed width (not content-based) -- otherwise rows with 3 stat boxes
-     (Uptime/SSL/Domain) vs 2 (Uptime/SSL only) end up different widths,
-     which pushes row-bar to a different x-position on every row instead
-     of lining up in one consistent column. */
-  .row-right { text-align: right; flex-shrink: 0; width: 260px; }
+  /* Column 3: stat boxes, same width as column 1 and 2 (equal grid thirds) --
+     right-padded to match the left-padding on column 1. */
+  .row-right { text-align: right; min-width: 0; padding-right: 18px; }
   .status-label { font-size: 13px; font-weight: 700; }
   .status-label.up { color: var(--up-text); }
   .status-label.down { color: var(--down-text); }
@@ -349,7 +347,8 @@ const REFRESH_INTERVAL_MS = 90 * 1000;
 const BAR_WINDOW_HOURS = 24;
 const BAR_BUCKET_MINUTES = 30;
 const BAR_BUCKET_COUNT = (BAR_WINDOW_HOURS * 60) / BAR_BUCKET_MINUTES;
-const BAR_MARKER_HOURS = [24, 12, 6, 3, 1, 0]; // 0 = "now"
+const BAR_MARKER_HOURS = [24, 18, 12, 6, 0]; // 0 = "now" -- taller tick at each of these
+const BAR_LABEL_HOURS = [24, 12, 0]; // subset of BAR_MARKER_HOURS that also gets a text label
 
 const UP_COLOR = "#22c55e";
 const DOWN_COLOR = "#ef4444";
@@ -573,7 +572,7 @@ function renderMiniBar(entries) {
 
   const lastIdx = BAR_BUCKET_COUNT - 1;
   const labels = buckets.map((_, i) => {
-    const hourLabel = BAR_MARKER_HOURS.find(h => markerBucketIndex(h) === i);
+    const hourLabel = BAR_LABEL_HOURS.find(h => markerBucketIndex(h) === i);
     if (hourLabel === undefined) return "<span></span>";
     const align = i === 0 ? "left" : i === lastIdx ? "right" : "center";
     const text = hourLabel === 0 ? "now" : hourLabel + "h";
@@ -654,12 +653,14 @@ function render(rows, bySite, incidents) {
 
     return `
       <div class="row">
-        <div class="status-icon ${statusClass}">${icon}</div>
-        <div class="row-main">
-          <a class="row-name" href="${r['URL']}" target="_blank" rel="noopener">${r["Name"]}</a>
-          <div class="row-meta">
-            <span class="type-tag">HTTP</span>
-            <span class="checked-ago">checked ${timeAgo(parseTimestamp(r["Last Checked (UTC)"]))}</span>
+        <div class="row-left">
+          <div class="status-icon ${statusClass}">${icon}</div>
+          <div class="row-main">
+            <a class="row-name" href="${r['URL']}" target="_blank" rel="noopener">${r["Name"]}</a>
+            <div class="row-meta">
+              <span class="type-tag">HTTP</span>
+              <span class="checked-ago">checked ${timeAgo(parseTimestamp(r["Last Checked (UTC)"]))}</span>
+            </div>
           </div>
         </div>
         <div class="row-bar">${barHtml}</div>

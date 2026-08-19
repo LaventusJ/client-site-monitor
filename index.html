@@ -222,12 +222,13 @@
   .checked-ago { font-size: 12px; color: var(--text-faint); }
 
   /* History bar: fixed 48-column grid spanning a real 24h window (see
-     BAR_BUCKET_COUNT below), so ticks scale with row width automatically
-     and are noticeably bigger than the old fixed-width ticks. Marker
-     ticks (24h/12h/6h/3h/1h/now) are taller so the eye can line them up
-     with the labels row underneath. */
-  .mini-bar { display: grid; grid-template-columns: repeat(48, 1fr); gap: 1px; align-items: end; height: 22px; margin-top: 8px; }
-  .mini-bar .tick { height: 100%; border-radius: 1px; background: var(--tick-empty); }
+     BAR_BUCKET_COUNT below). Each tick is a thin, centered mark within its
+     column (not stretched edge-to-edge) so the bar reads as slim ticks
+     like before, while the 48-column grid keeps the labels row perfectly
+     aligned underneath. Marker ticks (24h/12h/6h/3h/1h/now) are taller so
+     the eye can line them up with their label. */
+  .mini-bar { display: grid; grid-template-columns: repeat(48, 1fr); align-items: end; height: 22px; margin-top: 8px; }
+  .mini-bar .tick { width: 3px; justify-self: center; height: 100%; border-radius: 1px; background: var(--tick-empty); }
   .mini-bar .tick.marker { height: 130%; }
   .bar-labels { display: grid; grid-template-columns: repeat(48, 1fr); margin-top: 3px; font-size: 9px; color: var(--text-faint); }
 

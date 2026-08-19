@@ -194,7 +194,10 @@
   .status-icon.up { background: var(--up); }
   .status-icon.down { background: var(--down); }
 
-  .row-main { flex: 1; min-width: 0; }
+  /* Fixed width, not flex:1 -- flex:1 was letting this box stretch far past
+     the actual name text, which pushed row-bar out to wherever that
+     stretched box ended instead of sitting in the true middle of the row. */
+  .row-main { flex: 0 0 230px; min-width: 0; }
   .row-name {
     font-weight: 600;
     font-size: 14px;
@@ -228,7 +231,13 @@
      column (not stretched edge-to-edge) so the bar reads as slim ticks.
      Marker ticks (24h/12h/6h/3h/1h/now) are taller so the eye can line
      them up with their label underneath. */
-  .row-bar { flex-shrink: 0; width: 240px; }
+  /* row-bar is the one flexible column in the row -- it grows/shrinks to
+     fill whatever space is left between the fixed-width name column and the
+     fixed-width stat-box column, and centers the fixed-size bar-inner
+     inside itself. That's what actually puts the bar in the "middle" of the
+     row regardless of name length or how many stat boxes a row has. */
+  .row-bar { flex: 1; min-width: 0; display: flex; justify-content: center; }
+  .bar-inner { width: 240px; }
   .mini-bar { display: grid; grid-template-columns: repeat(48, 1fr); align-items: end; height: 22px; margin-top: 8px; }
   .mini-bar .tick { width: 1.5px; justify-self: center; height: 100%; border-radius: 1px; background: var(--tick-empty); }
   .mini-bar .tick.marker { height: 130%; }
@@ -565,7 +574,7 @@ function renderMiniBar(entries) {
     return `<span style="text-align:${align}">${text}</span>`;
   }).join("");
 
-  return `<div class="mini-bar">${ticks}</div><div class="bar-labels">${labels}</div>`;
+  return `<div class="bar-inner"><div class="mini-bar">${ticks}</div><div class="bar-labels">${labels}</div></div>`;
 }
 
 // ---------------------------------------------------------------------------

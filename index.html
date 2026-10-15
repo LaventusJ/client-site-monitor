@@ -162,6 +162,7 @@
   .count-dot.up { background: var(--up); }
   .count-dot.down { background: var(--down); }
   .count-dot.warn { background: #f59e0b; }
+  .count-dot.stale { background: var(--text-faint); }
 
   .list {
     background: var(--card-bg);
@@ -207,6 +208,8 @@
   }
   .status-icon.up { background: var(--up); }
   .status-icon.down { background: var(--down); }
+  .status-icon.blocked { background: #f59e0b; }
+  .status-icon.stale { background: var(--text-faint); }
 
   .row-main { flex: 1; min-width: 0; }
   .row-name {
@@ -255,6 +258,10 @@
   .status-label { font-size: 13px; font-weight: 700; }
   .status-label.up { color: var(--up-text); }
   .status-label.down { color: var(--down-text); }
+  .status-label.blocked { color: var(--warn-text); }
+  .status-label.stale { color: var(--text-muted); }
+  /* Reason from the latest check (e.g. "HTTP 403"), shown under the label. */
+  .status-detail { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
 
   /* Per-row stat boxes: Uptime/Down, SSL, Domain -- replaces the old
      inline status-label/uptime-pct/expiry-tags text stack with clearer,
@@ -300,6 +307,9 @@
 
   .state { text-align: center; padding: 60px 20px; color: var(--text-muted); }
   .state.error { color: var(--down-text); }
+  /* Shown when a refresh fails but we still have the last good data on screen. */
+  .refresh-note { margin-top: 10px; font-size: 12px; color: var(--warn-text); text-align: center; }
+  .refresh-note:empty { display: none; }
   footer { margin-top: 14px; font-size: 11px; color: var(--text-faint); text-align: center; }
 </style>
 </head>
@@ -333,6 +343,7 @@
     <div id="incidents-content"><div class="state">Loading incident history&hellip;</div></div>
   </div>
 
+  <div id="refresh-note" class="refresh-note"></div>
   <footer id="footer"></footer>
 
 </div>
@@ -357,6 +368,11 @@ const DOWN_COLOR = "#ef4444";
 // gradient toward red as the renewal date approaches (no hard bands, unlike
 // the SSL box or the Slack alert thresholds in monitor.py).
 const DOMAIN_GRADIENT_FLOOR_DAYS = 30;
+
+// A site whose "Last Checked" is older than this is shown as Stale (grey)
+// rather than its last-known status -- usually it's been removed from the
+// Monitors tab but its old row is still sitting in the Status tab.
+const STALE_AFTER_MINUTES = 60;
 
 // ---------------------------------------------------------------------------
 // Theme
@@ -391,6 +407,30 @@ function switchTab(name) {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+// Makes Sheet text safe to drop into innerHTML (so a "<" or "&" in a site
+// name can't break the page).
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  })[c]);
+}
+
+// Only allow http(s) links from the Sheet.
+function safeUrl(url) {
+  return /^https?:\/\//i.test(url || "") ? escapeHtml(url) : "#";
+}
+
+// One of "up" | "down" | "blocked" | "stale". "blocked" is a DOWN whose
+// latest check got HTTP 403 -- the server answered but refused the monitor
+// (e.g. host bot protection), so it's shown amber rather than red.
+function siteState(row, entries) {
+  const checked = parseTimestamp(row["Last Checked (UTC)"]);
+  if (!checked || Date.now() - checked.getTime() > STALE_AFTER_MINUTES * 60000) return "stale";
+  if (row["Status"] !== "DOWN") return "up";
+  const latest = entries[entries.length - 1];
+  return latest && /^HTTP 403\b/.test(latest.detail || "") ? "blocked" : "down";
+}
+
 function parseTimestamp(str) {
   if (!str) return null;
   // Expected format: "YYYY-MM-DD HH:MM UTC"
@@ -589,47 +629,69 @@ function render(rows, bySite, incidents) {
   const loading = document.getElementById("loading");
   if (loading) loading.remove();
 
-  const downCount = rows.filter(r => r["Status"] === "DOWN").length;
-  const upCount = rows.filter(r => r["Status"] === "UP").length;
-  const expiringCount = rows.filter(r => {
+  const sites = rows.map(r => {
+    const entries = bySite[r["Name"]] || [];
+    return { r, entries, state: siteState(r, entries) };
+  });
+  const countOf = state => sites.filter(s => s.state === state).length;
+  const downCount = countOf("down");
+  const blockedCount = countOf("blocked");
+  const staleCount = countOf("stale");
+  // Stale rows' SSL/domain figures are out of date, so leave them out of
+  // the expiry count + panel.
+  const liveRows = sites.filter(s => s.state !== "stale").map(s => s.r);
+  const expiringCount = liveRows.filter(r => {
     const s = parseInt(r["SSL Days Left"]);
     const d = parseInt(r["Domain Days Left"]);
     return (!isNaN(s) && s <= 30) || (!isNaN(d) && d <= 30);
   }).length;
 
   document.getElementById("countbar").innerHTML = `
-    <div class="count-item"><span class="count-dot up"></span><b>${upCount}</b> up</div>
+    <div class="count-item"><span class="count-dot up"></span><b>${countOf("up")}</b> up</div>
     <div class="count-item"><span class="count-dot down"></span><b>${downCount}</b> down</div>
+    ${blockedCount ? `<div class="count-item"><span class="count-dot warn"></span><b>${blockedCount}</b> blocked</div>` : ""}
+    ${staleCount ? `<div class="count-item"><span class="count-dot stale"></span><b>${staleCount}</b> stale</div>` : ""}
     <div class="count-item"><span class="count-dot warn"></span><b>${expiringCount}</b> expiring &le; 30d</div>
-    <div class="count-item"><b>${rows.length}</b> total monitored</div>
+    <div class="count-item"><b>${rows.length - staleCount}</b> total monitored</div>
   `;
 
   renderSummary24h(bySite, incidents, downCount > 0);
-  renderExpiringPanel(rows);
+  renderExpiringPanel(liveRows);
 
-  const sorted = [...rows].sort((a, b) => {
-    if (a["Status"] !== b["Status"]) return a["Status"] === "DOWN" ? -1 : 1;
-    return (a["Name"] || "").localeCompare(b["Name"] || "");
+  const STATE_ORDER = { down: 0, blocked: 1, up: 2, stale: 3 };
+  const STATE_LABEL = { up: "Up", down: "Down", blocked: "Blocked", stale: "Stale" };
+  const STATE_ICON = { up: "&#9650;", down: "&#9679;", blocked: "&#9679;", stale: "&#8211;" };
+
+  const sorted = [...sites].sort((a, b) => {
+    if (a.state !== b.state) return STATE_ORDER[a.state] - STATE_ORDER[b.state];
+    return (a.r["Name"] || "").localeCompare(b.r["Name"] || "");
   });
 
-  const rowsHtml = sorted.map(r => {
-    const isDown = r["Status"] === "DOWN";
-    const statusClass = isDown ? "down" : "up";
-    const icon = isDown ? "&#9679;" : "&#9650;";
+  const rowsHtml = sorted.map(({ r, entries, state }) => {
+    const isDown = state === "down" || state === "blocked";
     const sslDays = parseInt(r["SSL Days Left"]);
     const domDays = parseInt(r["Domain Days Left"]);
 
-    const entries = bySite[r["Name"]] || [];
     const barHtml = entries.length ? renderMiniBar(entries) : "";
+
+    const latest = entries[entries.length - 1];
+    let detailHtml = "";
+    if (state === "stale") {
+      detailHtml = `<div class="status-detail">No longer being checked</div>`;
+    } else if (isDown && latest && latest.detail) {
+      const hint = state === "blocked" ? "Server is up but refusing the monitor (e.g. host bot protection)" : "";
+      detailHtml = `<div class="status-detail" title="${hint}">${escapeHtml(latest.detail)}</div>`;
+    }
 
     const uptimeBox = isDown
       ? (() => {
           const since = findDownSince(r["Name"], entries, incidents);
           const elapsed = since ? formatDuration(Date.now() - since.getTime()) : "—";
           const title = since ? `Since ${formatDateTime(since)}` : "";
+          const color = state === "blocked" ? "var(--warn-text)" : "var(--down-text)";
           return `<div class="stat-box" title="${title}">
-            <div class="stat-num" style="color:var(--down-text)">${elapsed}</div>
-            <div class="stat-label">Down for</div>
+            <div class="stat-num" style="color:${color}">${elapsed}</div>
+            <div class="stat-label">${state === "blocked" ? "Blocked for" : "Down for"}</div>
           </div>`;
         })()
       : (() => {
@@ -654,9 +716,9 @@ function render(rows, bySite, incidents) {
     return `
       <div class="row">
         <div class="row-left">
-          <div class="status-icon ${statusClass}">${icon}</div>
+          <div class="status-icon ${state}">${STATE_ICON[state]}</div>
           <div class="row-main">
-            <a class="row-name" href="${r['URL']}" target="_blank" rel="noopener">${r["Name"]}</a>
+            <a class="row-name" href="${safeUrl(r['URL'])}" target="_blank" rel="noopener">${escapeHtml(r["Name"])}</a>
             <div class="row-meta">
               <span class="type-tag">HTTP</span>
               <span class="checked-ago">checked ${timeAgo(parseTimestamp(r["Last Checked (UTC)"]))}</span>
@@ -665,7 +727,8 @@ function render(rows, bySite, incidents) {
         </div>
         <div class="row-bar">${barHtml}</div>
         <div class="row-right">
-          <div class="status-label ${statusClass}">${isDown ? "Down" : "Up"}</div>
+          <div class="status-label ${state}">${STATE_LABEL[state]}</div>
+          ${detailHtml}
           <div class="stat-boxes">${uptimeBox}${sslBox}${domainBox}</div>
         </div>
       </div>
@@ -704,7 +767,7 @@ function renderExpiringPanel(rows) {
     const cls = i.days <= 7 ? "expiry-critical" : "expiry-warn";
     return `
       <div class="expiring-item">
-        <div><span class="name">${i.name}</span> <span class="detail">${i.label} &middot; ${i.date || ''}</span></div>
+        <div><span class="name">${escapeHtml(i.name)}</span> <span class="detail">${i.label} &middot; ${escapeHtml(i.date)}</span></div>
         <div class="days ${cls}">${i.days}d</div>
       </div>
     `;
@@ -777,7 +840,7 @@ function renderIncidents(incidents) {
       <div class="incident-row">
         <div class="incident-icon ${ongoing ? 'ongoing' : 'resolved'}">${ongoing ? '!' : '&#10003;'}</div>
         <div class="incident-main">
-          <div class="incident-name">${i.name}</div>
+          <div class="incident-name">${escapeHtml(i.name)}</div>
           <div class="incident-time">${timeLabel} &middot; ${formatDuration(duration)}</div>
         </div>
         <div class="incident-badge ${ongoing ? 'ongoing' : 'resolved'}">${ongoing ? 'Ongoing' : 'Resolved'}</div>
@@ -791,8 +854,17 @@ function renderIncidents(incidents) {
 // ---------------------------------------------------------------------------
 // Fetch + error handling
 // ---------------------------------------------------------------------------
+// Time of the last successful load. Once we have good data on screen, a
+// failed refresh just shows a small note instead of wiping the list.
+let lastGoodLoad = null;
+
 function renderError(message) {
-  const html = `<div class="state error">Couldn't load status data.<br>${message}</div>`;
+  if (lastGoodLoad) {
+    document.getElementById("refresh-note").textContent =
+      `Couldn't refresh (${message}) -- showing data from ${formatDateTime(lastGoodLoad)}.`;
+    return;
+  }
+  const html = `<div class="state error">Couldn't load status data.<br>${escapeHtml(message)}</div>`;
   document.getElementById("content").innerHTML = html;
   document.getElementById("incidents-content").innerHTML = html;
 }
@@ -800,6 +872,7 @@ function renderError(message) {
 async function load() {
   try {
     const res = await fetch(WORKER_URL);
+    if (!res.ok) { renderError("HTTP " + res.status); return; }
     const data = await res.json();
     if (data.error) { renderError(data.error); return; }
     if (!data.rows || data.rows.length === 0) { renderError("No rows returned."); return; }
@@ -807,6 +880,8 @@ async function load() {
     const incidents = parseIncidents(data.incidents || []);
     render(data.rows, bySite, incidents);
     renderIncidents(incidents);
+    lastGoodLoad = new Date();
+    document.getElementById("refresh-note").textContent = "";
   } catch (e) {
     renderError(e.message || String(e));
   }

@@ -420,15 +420,29 @@ function safeUrl(url) {
   return /^https?:\/\//i.test(url || "") ? escapeHtml(url) : "#";
 }
 
-// One of "up" | "down" | "blocked" | "stale". "blocked" is a DOWN whose
-// latest check got HTTP 403 -- the server answered but refused the monitor
-// (e.g. host bot protection), so it's shown amber rather than red.
+// A check where the server answered but refused the monitor: either
+// monitor.py's SiteGround bot-block (recorded as UP, see SG_BLOCK_DETAIL in
+// monitor.py) or an older/other DOWN with HTTP 403.
+function isBlockedEntry(e) {
+  const detail = (e && e.detail) || "";
+  return /SiteGround bot block/.test(detail) || (e.status === "DOWN" && /^HTTP 403\b/.test(detail));
+}
+
+// One of "up" | "down" | "blocked" | "stale". "blocked" is shown amber
+// rather than red -- the host is up, it's just refusing the monitor.
 function siteState(row, entries) {
   const checked = parseTimestamp(row["Last Checked (UTC)"]);
   if (!checked || Date.now() - checked.getTime() > STALE_AFTER_MINUTES * 60000) return "stale";
-  if (row["Status"] !== "DOWN") return "up";
   const latest = entries[entries.length - 1];
-  return latest && /^HTTP 403\b/.test(latest.detail || "") ? "blocked" : "down";
+  if (latest && isBlockedEntry(latest)) return "blocked";
+  return row["Status"] === "DOWN" ? "down" : "up";
+}
+
+// When the current run of blocked checks began (walking back from the latest).
+function findBlockedSince(entries) {
+  let since = null;
+  for (let i = entries.length - 1; i >= 0 && isBlockedEntry(entries[i]); i--) since = entries[i].time;
+  return since;
 }
 
 function parseTimestamp(str) {
@@ -685,7 +699,7 @@ function render(rows, bySite, incidents) {
 
     const uptimeBox = isDown
       ? (() => {
-          const since = findDownSince(r["Name"], entries, incidents);
+          const since = state === "blocked" ? findBlockedSince(entries) : findDownSince(r["Name"], entries, incidents);
           const elapsed = since ? formatDuration(Date.now() - since.getTime()) : "—";
           const title = since ? `Since ${formatDateTime(since)}` : "";
           const color = state === "blocked" ? "var(--warn-text)" : "var(--down-text)";

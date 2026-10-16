@@ -1,0 +1,18 @@
+{
+  "collection": "ms_client_site_monitor_ad2ee6cd",
+  "failed_files": [],
+  "indexed_chunks": 0,
+  "indexed_files": 0,
+  "last_completed_at": "2026-10-15T22:53:24.000998Z",
+  "last_started_at": "2026-10-15T22:53:21.477773Z",
+  "last_success_at": "2026-10-15T22:53:24.000998Z",
+  "milvus_uri": "~/.memsearch/milvus.db",
+  "operation": "index",
+  "paths": [
+    "D:/VS Code/client-site-monitor/.memsearch/memory"
+  ],
+  "schema_version": 1,
+  "status": "ok",
+  "total_files": 0,
+  "updated_at": "2026-10-15T22:53:24.000998Z"
+}

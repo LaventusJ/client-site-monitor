@@ -7,14 +7,12 @@ on:
         description: 'Check mode: uptime or full'
         required: false
         default: 'full'
-  schedule:
-    # Uptime check every 5 minutes...
-    - cron: '*/5 * * * *'
-    # ...except this one run at 06:00 UTC, which the "Work out which mode"
-    # step below recognises and upgrades to a "full" check (SSL + domain
-    # expiry too). Keeping it as a second cron line (rather than a param)
-    # is what lets that step tell the two apart.
-    - cron: '0 6 * * *'
+  # No native `schedule:` trigger here -- GitHub's own cron scheduler proved
+  # unreliable for this (confirmed: zero automatic fires over 40+ minutes on
+  # a */5 schedule). An external cron service (cron-job.org) calls the
+  # workflow_dispatch API endpoint every 5 minutes instead, passing `mode`
+  # directly. Don't re-add `schedule:` without removing the external cron
+  # job first, or both will fire and double-write every check.
 
 jobs:
   check:

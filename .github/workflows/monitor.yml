@@ -47,6 +47,7 @@ jobs:
           CHECK_MODE: ${{ steps.mode.outputs.mode }}
           GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          UPTIMEROBOT_API_KEY: ${{ secrets.UPTIMEROBOT_API_KEY }}
           ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
           ZAPIER_WEBHOOK_DOWNTIME: ${{ secrets.ZAPIER_WEBHOOK_DOWNTIME }}
           ZAPIER_WEBHOOK_EXPIRY: ${{ secrets.ZAPIER_WEBHOOK_EXPIRY }}

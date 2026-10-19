@@ -98,6 +98,16 @@ HTTP_RETRY_DELAY_SECONDS = 5
 # UP). main() and the dashboard both key off this exact text.
 SG_BLOCK_DETAIL = "HTTP 403 (SiteGround bot block)"
 
+# Sites whose host blocks generic "datacenter-class" traffic aggressively
+# enough to drop the connection outright (not just serve a 403) -- confirmed
+# on MZR from both the TrueNAS and GitHub Actions. UptimeRobot's checks
+# aren't blocked there, so for these we ask UptimeRobot's API what it saw
+# instead of making our own HTTP request. Map: our Monitors-tab name ->
+# UptimeRobot monitor ID.
+UPTIMEROBOT_MONITOR_IDS = {
+    "MZR (Blocked Drains Birmingham)": 795514069,
+}
+
 
 # ---------------------------------------------------------------------------
 # Google Sheets helpers
@@ -329,6 +339,34 @@ def check_siteground_403(url):
     return r.status_code < 400, f"HTTP {r.status_code}"
 
 
+def check_uptimerobot(monitor_id):
+    """Returns (is_up, detail_string) using UptimeRobot's own check result
+    instead of making our own HTTP request. UptimeRobot status codes: 0 =
+    paused, 1 = not checked yet, 2 = up, 8 = seems down, 9 = down. Paused/
+    not-checked-yet counts as up so an unrelated UptimeRobot account change
+    doesn't trigger a false DOWN alert here.
+    """
+    try:
+        r = requests.post(
+            "https://api.uptimerobot.com/v2/getMonitors",
+            data={
+                "api_key": os.environ["UPTIMEROBOT_API_KEY"],
+                "format": "json",
+                "monitors": str(monitor_id),
+            },
+            timeout=15,
+        )
+        data = r.json()
+        if data.get("stat") != "ok" or not data.get("monitors"):
+            return False, "UptimeRobot API error"
+        status = data["monitors"][0]["status"]
+        if status in (8, 9):
+            return False, "UptimeRobot: down"
+        return True, "UptimeRobot: up"
+    except (requests.RequestException, ValueError, KeyError, IndexError) as e:
+        return False, f"UptimeRobot check failed: {type(e).__name__}"
+
+
 def check_http(url, session):
     """Returns (is_up, detail_string).
 
@@ -468,7 +506,10 @@ def main():
         prev_domain_days = prev.get("Domain Days Left")
 
         # --- Uptime check (every run) ---
-        is_up, detail = check_http(url, http_session)
+        if name in UPTIMEROBOT_MONITOR_IDS:
+            is_up, detail = check_uptimerobot(UPTIMEROBOT_MONITOR_IDS[name])
+        else:
+            is_up, detail = check_http(url, http_session)
         if is_up:
             fails = 0
             new_status = "UP"
